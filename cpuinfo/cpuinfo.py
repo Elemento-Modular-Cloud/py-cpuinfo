@@ -56,6 +56,24 @@ def trace_info(msg):
 	line = frame[2]
 	logger.info("File \"{0}\", line {1}, {2}".format(file, line, msg))
 
+def trace_flags(log_name, msg):
+	if not logger: return
+
+	trace_write(' ' * 80)
+	trace_write("/\\" * 40)
+
+	from inspect import stack
+	frame = stack()[1]
+	file = frame[1]
+	line = frame[2]
+	sys.stdout.write("{0}:__main__:File \"{1}\", line {2}\n".format(log_name, file, line))
+	for key, value in msg.items():
+		sys.stdout.write("{0}: {1}\n".format(key, value))
+	sys.stdout.flush()
+
+	trace_write("\/" * 40)
+	trace_write(' ' * 80)
+
 def trace_exception(err):
 	if not logger: return
 
@@ -250,8 +268,12 @@ def _run_and_get_stdout(command, pipe_command=None):
 
 	# Send the result to the logger
 	trace_info('Running command "' + ' '.join(command) + '" ...')
+	trace_write(' ' * 80)
+	trace_write("/\\" * 40)
 	trace_write(stdout_output)
 	trace_write(stderr_output)
+	trace_write("\/" * 40)
+	trace_write(' ' * 80)
 
 	# Return the return code and stdout
 	return p1.returncode, stdout_output
@@ -304,6 +326,9 @@ def _copy_new_fields(info, new_info):
 		'processor_type', 'extended_model', 'extended_family', 'flags',
 		'l3_cache_size', 'l1_data_cache_size', 'l1_instruction_cache_size'
 	]
+
+	trace_flags('FLAGS_CURRENT', info)
+	trace_flags('FLAGS_TO_ADD', new_info)
 
 	for key in keys:
 		if new_info.get(key, None) and not info.get(key, None):
