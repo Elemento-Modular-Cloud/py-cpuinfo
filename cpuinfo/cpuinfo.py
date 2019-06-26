@@ -248,11 +248,10 @@ def _run_and_get_stdout(command, pipe_command=None):
 		stdout_output = stdout_output.decode(encoding='UTF-8')
 		stderr_output = stderr_output.decode(encoding='UTF-8')
 
-	# Send the result to the logger if needed
-	if logger:
-		trace_info('Running command "' + ' '.join(command) + '" ...')
-		trace_write(stdout_output)
-		trace_write(stderr_output)
+	# Send the result to the logger
+	trace_info('Running command "' + ' '.join(command) + '" ...')
+	trace_write(stdout_output)
+	trace_write(stderr_output)
 
 	# Return the return code and stdout
 	return p1.returncode, stdout_output
