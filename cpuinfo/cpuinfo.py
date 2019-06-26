@@ -64,7 +64,7 @@ def trace_exception(err):
 def trace_write(msg):
 	if not logger: return
 
-	print(msg)
+	sys.stdout.write(msg + '\n')
 	sys.stdout.flush()
 
 class DataSource(object):
