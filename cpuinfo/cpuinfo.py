@@ -44,20 +44,21 @@ except ImportError as err:
 IS_PY2 = sys.version_info[0] == 2
 CAN_CALL_CPUID_IN_SUBPROCESS = True
 
+trace_file = None
 
-logger = None
 
 def trace_info(msg):
-	if not logger: return
+	if not trace_file: return
 
 	from inspect import stack
 	frame = stack()[1]
 	file = frame[1]
 	line = frame[2]
-	logger.info("File \"{0}\", line {1}, {2}".format(file, line, msg))
+	trace_file.write("File \"{0}\", line {1}, {2}".format(file, line, msg))
+	trace_file.flush()
 
 def trace_flags(log_name, msg):
-	if not logger: return
+	if not trace_file: return
 
 	trace_write(' ' * 80)
 	trace_write("/\\" * 40)
@@ -66,24 +67,27 @@ def trace_flags(log_name, msg):
 	frame = stack()[1]
 	file = frame[1]
 	line = frame[2]
-	sys.stdout.write("{0}:__main__:File \"{1}\", line {2}\n".format(log_name, file, line))
+	trace_file.write("{0}:__main__:File \"{1}\", line {2}\n".format(log_name, file, line))
 	for key, value in msg.items():
-		sys.stdout.write("{0}: {1}\n".format(key, value))
-	sys.stdout.flush()
+		trace_file.write("{0}: {1}\n".format(key, value))
+	trace_file.flush()
 
 	trace_write("\/" * 40)
 	trace_write(' ' * 80)
 
 def trace_exception(err):
-	if not logger: return
+	if not trace_file: return
 
-	logger.exception(err)
+	from traceback import format_exc
+	err_string = format_exc()
+	trace_file.write(err_string)
+	trace_file.flush()
 
 def trace_write(msg):
-	if not logger: return
+	if not trace_file: return
 
-	sys.stdout.write(msg + '\n')
-	sys.stdout.flush()
+	trace_file.write(msg + '\n')
+	trace_file.flush()
 
 class DataSource(object):
 	bits = platform.architecture()[0]
@@ -1405,7 +1409,7 @@ def _get_cpu_info_from_cpuid_actual():
 
 def _get_cpu_info_from_cpuid_subprocess_wrapper(queue):
 	# Pipe all output to nothing
-	if not logger:
+	if not trace_file:
 		sys.stdout = open(os.devnull, 'w')
 		sys.stderr = open(os.devnull, 'w')
 
@@ -2519,14 +2523,12 @@ def main():
 	parser = ArgumentParser(description='Gets CPU info with pure Python 2 & 3')
 	parser.add_argument('--json', action='store_true', help='Return the info in JSON format')
 	parser.add_argument('--version', action='store_true', help='Return the version of py-cpuinfo')
-	parser.add_argument('--trace', action='store_true', help='Traces code paths used to find CPU info')
+	parser.add_argument('--trace', action='store_true', help='Traces code paths used to find CPU info to file')
 	args = parser.parse_args()
 
 	if args.trace:
-		global logger
-		import logging
-		logging.basicConfig(level=logging.DEBUG)
-		logger = logging.getLogger(__name__)
+		global trace_file
+		trace_file = open('cpuinfo_trace.log', 'w')
 
 	try:
 		_check_arch()
