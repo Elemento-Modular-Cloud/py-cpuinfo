@@ -47,6 +47,55 @@ CAN_CALL_CPUID_IN_SUBPROCESS = True
 trace_file = None
 
 
+def trace_header(msg):
+	if not trace_file: return
+
+	from inspect import stack
+	frame = stack()[1]
+	file = frame[1]
+	line = frame[2]
+	trace_file.write("{0} ({1} {2})\n".format(msg, file, line))
+	trace_file.flush()
+
+def trace_success():
+	if not trace_file: return
+
+	trace_file.write('\tSuccess ...\n')
+	trace_file.flush()
+
+def trace_fail(msg):
+	if not trace_file: return
+
+	if isinstance(msg, str):
+		msg = ''.join(['\t' + line for line in msg.split('\n')]) + '\n'
+
+		trace_file.write('\tFailed ...\n')
+		trace_file.write(msg)
+		trace_file.flush()
+	elif isinstance(msg, Exception):
+		from traceback import format_exc
+		err_string = format_exc()
+		trace_file.write('\tFailed ...\n')
+		trace_file.write(''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n')
+		trace_file.flush()
+
+def trace_command_header(msg):
+	if not trace_file: return
+
+	from inspect import stack
+	frame = stack()[1]
+	file = frame[1]
+	line = frame[2]
+	trace_file.write("\t{0} ({1} {2})\n".format(msg, file, line))
+	trace_file.flush()
+
+def trace_command_output(msg, output):
+	if not trace_file: return
+
+	trace_file.write("\t\t{0}\n".format(msg))
+	trace_file.write(''.join(['\t\t\t{0}\n'.format(n) for n in output.split('\n')]) + '\n')
+	trace_file.flush()
+
 def trace_info(msg):
 	if not trace_file: return
 
@@ -54,7 +103,7 @@ def trace_info(msg):
 	frame = stack()[1]
 	file = frame[1]
 	line = frame[2]
-	trace_file.write("File \"{0}\", line {1}, {2}".format(file, line, msg))
+	trace_file.write("{0} ({1} {2})\n".format(msg, file, line))
 	trace_file.flush()
 
 def trace_flags(log_name, msg):
@@ -74,14 +123,6 @@ def trace_flags(log_name, msg):
 
 	trace_write("\/" * 40)
 	trace_write(' ' * 80)
-
-def trace_exception(err):
-	if not trace_file: return
-
-	from traceback import format_exc
-	err_string = format_exc()
-	trace_file.write(err_string)
-	trace_file.flush()
 
 def trace_write(msg):
 	if not trace_file: return
@@ -201,40 +242,29 @@ class DataSource(object):
 
 	@staticmethod
 	def winreg_processor_brand():
-		key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Hardware\Description\System\CentralProcessor\0")
-		processor_brand = winreg.QueryValueEx(key, "ProcessorNameString")[0]
-		winreg.CloseKey(key)
+		processor_brand = _read_windows_registry_key(r"Hardware\Description\System\CentralProcessor\0", "ProcessorNameString")
 		return processor_brand.strip()
 
 	@staticmethod
 	def winreg_vendor_id_raw():
-		key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Hardware\Description\System\CentralProcessor\0")
-		vendor_id_raw = winreg.QueryValueEx(key, "VendorIdentifier")[0]
-		winreg.CloseKey(key)
+		vendor_id_raw = _read_windows_registry_key(r"Hardware\Description\System\CentralProcessor\0", "VendorIdentifier")
 		return vendor_id_raw
 
 	@staticmethod
 	def winreg_arch_string_raw():
-		key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
-		arch_string_raw = winreg.QueryValueEx(key, "PROCESSOR_ARCHITECTURE")[0]
-		winreg.CloseKey(key)
+		arch_string_raw = _read_windows_registry_key(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "PROCESSOR_ARCHITECTURE")
 		return arch_string_raw
 
 	@staticmethod
 	def winreg_hz_actual():
-		key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Hardware\Description\System\CentralProcessor\0")
-		hz_actual = winreg.QueryValueEx(key, "~Mhz")[0]
-		winreg.CloseKey(key)
+		hz_actual = _read_windows_registry_key(r"Hardware\Description\System\CentralProcessor\0", "~Mhz")
 		hz_actual = _to_decimal_string(hz_actual)
 		return hz_actual
 
 	@staticmethod
 	def winreg_feature_bits():
-		key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Hardware\Description\System\CentralProcessor\0")
-		feature_bits = winreg.QueryValueEx(key, "FeatureSet")[0]
-		winreg.CloseKey(key)
+		feature_bits = _read_windows_registry_key(r"Hardware\Description\System\CentralProcessor\0", "FeatureSet")
 		return feature_bits
-
 
 def _program_paths(program_name):
 	paths = []
@@ -255,6 +285,8 @@ def _run_and_get_stdout(command, pipe_command=None):
 
 	p1, p2, stdout_output, stderr_output = None, None, None, None
 
+	trace_command_header('Running command "' + ' '.join(command) + '" ...')
+
 	# Run the command normally
 	if not pipe_command:
 		p1 = Popen(command, stdout=PIPE, stderr=PIPE, stdin=PIPE)
@@ -271,16 +303,18 @@ def _run_and_get_stdout(command, pipe_command=None):
 		stderr_output = stderr_output.decode(encoding='UTF-8')
 
 	# Send the result to the logger
-	trace_info('Running command "' + ' '.join(command) + '" ...')
-	trace_write(' ' * 80)
-	trace_write("/\\" * 40)
-	trace_write(stdout_output)
-	trace_write(stderr_output)
-	trace_write("\/" * 40)
-	trace_write(' ' * 80)
+	trace_command_output('return code: {0}, stdout:'.format(p1.returncode), stdout_output)
 
 	# Return the return code and stdout
 	return p1.returncode, stdout_output
+
+def _read_windows_registry_key(key_name, field_name):
+	trace_command_header('Reading Registry key "{0}" field "{1}" ...'.format(key_name, field_name))
+	key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_name)
+	value = winreg.QueryValueEx(key, field_name)[0]
+	winreg.CloseKey(key)
+	trace_command_output('value:', str(value))
+	return value
 
 # Make sure we are running on a supported system
 def _check_arch():
@@ -331,8 +365,8 @@ def _copy_new_fields(info, new_info):
 		'l3_cache_size', 'l1_data_cache_size', 'l1_instruction_cache_size'
 	]
 
-	trace_flags('FLAGS_CURRENT', info)
-	trace_flags('FLAGS_TO_ADD', new_info)
+	#trace_flags('FLAGS_CURRENT', info)
+	#trace_flags('FLAGS_TO_ADD', new_info)
 
 	for key in keys:
 		if new_info.get(key, None) and not info.get(key, None):
@@ -2112,17 +2146,17 @@ def _get_cpu_info_from_wmic():
 	Returns the CPU info gathered from WMI.
 	Returns {} if not on Windows, or wmic is not installed.
 	'''
-	trace_info('Tying to get info from wmic ...')
+	trace_header('Tying to get info from wmic ...')
 
 	try:
 		# Just return {} if not Windows or there is no wmic
 		if not DataSource.is_windows or not DataSource.has_wmic():
-			trace_info('Failed to find WMIC, or not on Windows. Skipping ...')
+			trace_fail('Failed to find WMIC, or not on Windows. Skipping ...')
 			return {}
 
 		returncode, output = DataSource.wmic_cpu()
 		if output == None or returncode != 0:
-			trace_info('Failed to run wmic. Skipping ...')
+			trace_fail('Failed to run wmic. Skipping ...')
 			return {}
 
 		# Break the list into key values pairs
@@ -2184,10 +2218,10 @@ def _get_cpu_info_from_wmic():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_info('Success ...')
+		trace_success()
 		return info
 	except Exception as err:
-		trace_exception(err)
+		trace_fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -2198,12 +2232,12 @@ def _get_cpu_info_from_registry():
 	Returns {} if not on Windows.
 	'''
 
-	trace_info('Tying to get info from Windows registry ...')
+	trace_header('Tying to get info from Windows registry ...')
 
 	try:
 		# Just return {} if not on Windows
 		if not DataSource.is_windows:
-			trace_info('Not running on Windows. Skipping ...')
+			trace_fail('Not running on Windows. Skipping ...')
 			return {}
 
 		# Get the CPU name
@@ -2291,7 +2325,7 @@ def _get_cpu_info_from_registry():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_info('Success ...')
+		trace_success()
 		return info
 	except Exception as err:
 		trace_exception(err)
@@ -2429,7 +2463,7 @@ def _get_cpu_info_internal():
 
 	# Try the Windows registry
 	_copy_new_fields(info, _get_cpu_info_from_registry())
-
+	'''
 	# Try /proc/cpuinfo
 	_copy_new_fields(info, _get_cpu_info_from_proc_cpuinfo())
 
@@ -2462,7 +2496,7 @@ def _get_cpu_info_internal():
 
 	# Try platform.uname
 	_copy_new_fields(info, _get_cpu_info_from_platform_uname())
-
+	'''
 	trace_write('!' * 80)
 
 	return info
