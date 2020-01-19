@@ -96,6 +96,35 @@ def trace_command_output(msg, output):
 	trace_file.write(''.join(['\t\t\t{0}\n'.format(n) for n in output.split('\n')]) + '\n')
 	trace_file.flush()
 
+def trace_keys(keys, info, new_info):
+	if not trace_file: return
+
+	from inspect import stack
+	frame = stack()[1]
+	file = frame[1]
+	line = frame[2]
+
+	# List updated keys
+	trace_file.write("Changed keys ({0} {1})\n".format(file, line))
+	trace_file.flush()
+	for key in keys:
+		if key in info and key in new_info and info[key] != new_info[key]:
+			trace_file.write('\t{0}: {1} to {2}\n'.format(key, info[key], new_info[key]))
+	else:
+		trace_file.write('\tNone\n')
+	trace_file.flush()
+
+	# List new keys
+	trace_file.write("New keys ({0} {1})\n".format(file, line))
+	trace_file.flush()
+	for key in keys:
+		if key in new_info and key not in info:
+			trace_file.write('\t{0}: {1}\n'.format(key, new_info[key]))
+	else:
+		trace_file.write('\tNone\n')
+	trace_file.flush()
+
+
 def trace_info(msg):
 	if not trace_file: return
 
@@ -365,9 +394,9 @@ def _copy_new_fields(info, new_info):
 		'l3_cache_size', 'l1_data_cache_size', 'l1_instruction_cache_size'
 	]
 
-	#trace_flags('FLAGS_CURRENT', info)
-	#trace_flags('FLAGS_TO_ADD', new_info)
+	trace_keys(keys, info, new_info)
 
+	# Update the keys with new values
 	for key in keys:
 		if new_info.get(key, None) and not info.get(key, None):
 			info[key] = new_info[key]
