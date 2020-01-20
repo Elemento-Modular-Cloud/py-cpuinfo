@@ -2459,6 +2459,13 @@ def _get_cpu_info_internal():
 		'arch_string_raw' : DataSource.arch_string_raw,
 	}
 
+	trace_write("python_version: {0}".format(info['python_version']))
+	trace_write("cpuinfo_version: {0}".format(info['cpuinfo_version']))
+	trace_write("arch: {0}".format(info['arch']))
+	trace_write("bits: {0}".format(info['bits']))
+	trace_write("count: {0}".format(info['count']))
+	trace_write("arch_string_raw: {0}".format(info['arch_string_raw']))
+
 	# Try the Windows wmic
 	_copy_new_fields(info, _get_cpu_info_from_wmic())
 
