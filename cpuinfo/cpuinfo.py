@@ -783,8 +783,8 @@ def _is_selinux_enforcing():
 		elif line.startswith("allow_execmem") and line.endswith("on"):
 			can_selinux_exec_memory = True
 
-	trace_command_output('can_selinux_exec_heap: {0}'.format(can_selinux_exec_heap))
-	trace_command_output('can_selinux_exec_memory: {0}'.format(can_selinux_exec_memory))
+	trace_command_output('can_selinux_exec_heap:', '{0}'.format(can_selinux_exec_heap))
+	trace_command_output('can_selinux_exec_memory:', '{0}'.format(can_selinux_exec_memory))
 
 	return (not can_selinux_exec_heap or not can_selinux_exec_memory)
 
