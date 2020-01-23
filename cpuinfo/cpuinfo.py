@@ -106,24 +106,22 @@ def trace_keys(keys, info, new_info):
 
 	# List updated keys
 	trace_file.write("\tChanged keys ({0} {1})\n".format(file, line))
-	trace_file.flush()
-	for key in keys:
-		if key in info and key in new_info and info[key] != new_info[key]:
+	changed_keys = [key for key in keys if key in info and key in new_info and info[key] != new_info[key]]
+	if changed_keys:
+		for key in changed_keys:
 			trace_file.write('\t\t{0}: {1} to {2}\n'.format(key, info[key], new_info[key]))
-	# FIXME: Make this only print when there are no updated keys
 	else:
 		trace_file.write('\t\tNone\n')
-	trace_file.flush()
 
 	# List new keys
 	trace_file.write("\tNew keys ({0} {1})\n".format(file, line))
-	trace_file.flush()
-	for key in keys:
-		if key in new_info and key not in info:
+	new_keys = [key for key in keys if key in new_info and key not in info]
+	if new_keys:
+		for key in new_keys:
 			trace_file.write('\t\t{0}: {1}\n'.format(key, new_info[key]))
-	# FIXME: Make this only print when there are no updated keys
 	else:
 		trace_file.write('\t\tNone\n')
+
 	trace_file.write('\n')
 	trace_file.flush()
 
