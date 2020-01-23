@@ -110,6 +110,7 @@ def trace_keys(keys, info, new_info):
 	for key in keys:
 		if key in info and key in new_info and info[key] != new_info[key]:
 			trace_file.write('\t\t{0}: {1} to {2}\n'.format(key, info[key], new_info[key]))
+	# FIXME: Make this only print when there are no updated keys
 	else:
 		trace_file.write('\t\tNone\n')
 	trace_file.flush()
@@ -120,6 +121,7 @@ def trace_keys(keys, info, new_info):
 	for key in keys:
 		if key in new_info and key not in info:
 			trace_file.write('\t\t{0}: {1}\n'.format(key, new_info[key]))
+	# FIXME: Make this only print when there are no updated keys
 	else:
 		trace_file.write('\t\tNone\n')
 	trace_file.flush()
@@ -2500,6 +2502,7 @@ def _get_cpu_info_internal():
 	_copy_new_fields(info, _get_cpu_info_from_sysinfo())
 
 	# Try querying the CPU cpuid register
+	# FIXME: This should print stdout and stderr to trace log
 	_copy_new_fields(info, _get_cpu_info_from_cpuid())
 
 	# Try platform.uname
@@ -2570,7 +2573,10 @@ def main():
 
 	if args.trace:
 		global trace_file
-		trace_file = open('cpuinfo_trace.log', 'w')
+		from datetime import datetime
+
+		date = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+		trace_file = open('cpuinfo_trace_{0}.log'.format(date), 'w')
 
 	try:
 		_check_arch()
