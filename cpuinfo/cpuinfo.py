@@ -60,7 +60,7 @@ def trace_header(msg):
 def trace_success():
 	if not trace_file: return
 
-	trace_file.write('\tSuccess ...\n')
+	trace_file.write('Success ...\n\n')
 	trace_file.flush()
 
 def trace_fail(msg):
@@ -69,8 +69,8 @@ def trace_fail(msg):
 	if isinstance(msg, str):
 		msg = ''.join(['\t' + line for line in msg.split('\n')]) + '\n'
 
-		trace_file.write('\tFailed ...\n')
 		trace_file.write(msg)
+		trace_file.write('Failed ...\n\n')
 		trace_file.flush()
 	elif isinstance(msg, Exception):
 		from traceback import format_exc
@@ -124,6 +124,7 @@ def trace_keys(keys, info, new_info):
 	# FIXME: Make this only print when there are no updated keys
 	else:
 		trace_file.write('\t\tNone\n')
+	trace_file.write('\n')
 	trace_file.flush()
 
 def trace_write(msg):
@@ -305,7 +306,8 @@ def _run_and_get_stdout(command, pipe_command=None):
 		stderr_output = stderr_output.decode(encoding='UTF-8')
 
 	# Send the result to the logger
-	trace_command_output('return code: {0}, stdout:'.format(p1.returncode), stdout_output)
+	trace_command_output('return code:', str(p1.returncode))
+	trace_command_output('stdout:', stdout_output)
 
 	# Return the return code and stdout
 	return p1.returncode, stdout_output
@@ -785,8 +787,8 @@ def _is_selinux_enforcing():
 		elif line.startswith("allow_execmem") and line.endswith("on"):
 			can_selinux_exec_memory = True
 
-	trace_command_output('can_selinux_exec_heap:', '{0}'.format(can_selinux_exec_heap))
-	trace_command_output('can_selinux_exec_memory:', '{0}'.format(can_selinux_exec_memory))
+	trace_command_output('can_selinux_exec_heap:', can_selinux_exec_heap)
+	trace_command_output('can_selinux_exec_memory:', can_selinux_exec_memory)
 
 	return (not can_selinux_exec_heap or not can_selinux_exec_memory)
 
