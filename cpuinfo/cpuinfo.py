@@ -1390,59 +1390,88 @@ def _get_cpu_info_from_cpuid_actual():
 	It will safely call this function in another process.
 	'''
 
-	# Get the CPU arch and bits
-	arch, bits = _parse_arch(DataSource.arch_string_raw)
+	if IS_PY2:
+		from cStringIO import StringIO
+	else:
+		from io import StringIO
 
-	# Return none if this is not an X86 CPU
-	if not arch in ['X86_32', 'X86_64']:
-		trace_fail('Not running on X86_32 or X86_64. Skipping ...')
-		return {}
-
-	# Return none if SE Linux is in enforcing mode
-	cpuid = CPUID()
-	if cpuid.is_selinux_enforcing:
-		trace_fail('SELinux is enforcing. Skipping ...')
-		return {}
-
-	# Get the cpu info from the CPUID register
-	max_extension_support = cpuid.get_max_extension_support()
-	cache_info = cpuid.get_cache(max_extension_support)
-	info = cpuid.get_info()
-
-	processor_brand = cpuid.get_processor_brand(max_extension_support)
-
-	# Get the Hz and scale
-	hz_actual = cpuid.get_raw_hz()
-	hz_actual = _to_decimal_string(hz_actual)
-
-	# Get the Hz and scale
-	hz_advertised, scale = _parse_cpu_brand_string(processor_brand)
-	info = {
-	'vendor_id_raw' : cpuid.get_vendor_id(),
-	'hardware_raw' : '',
-	'brand_raw' : processor_brand,
-
-	'hz_advertised_friendly' : _hz_short_to_friendly(hz_advertised, scale),
-	'hz_actual_friendly' : _hz_short_to_friendly(hz_actual, 0),
-	'hz_advertised' : _hz_short_to_full(hz_advertised, scale),
-	'hz_actual' : _hz_short_to_full(hz_actual, 0),
-
-	'l2_cache_size' : _to_friendly_bytes(cache_info['size_kb']),
-	'l2_cache_line_size' : cache_info['line_size_b'],
-	'l2_cache_associativity' : hex(cache_info['associativity']),
-
-	'stepping' : info['stepping'],
-	'model' : info['model'],
-	'family' : info['family'],
-	'processor_type' : info['processor_type'],
-	'extended_model' : info['extended_model'],
-	'extended_family' : info['extended_family'],
-	'flags' : cpuid.get_flags(max_extension_support)
+	output = {
+	'trace_file' : StringIO(),
+	'stdout' : StringIO(),
+	'stderr' : StringIO(),
+	'info' : None,
+	'err' : None
 	}
 
-	info = {k: v for k, v in info.items() if v}
-	trace_success()
-	return info
+	# Pipe stdout and stderr to strings
+	global trace_file
+	trace_file = output['trace_file']
+	sys.stdout = output['stdout']
+	sys.stderr = output['stderr']
+
+	try:
+		# Get the CPU arch and bits
+		arch, bits = _parse_arch(DataSource.arch_string_raw)
+
+		# Return none if this is not an X86 CPU
+		if not arch in ['X86_32', 'X86_64']:
+			trace_fail('Not running on X86_32 or X86_64. Skipping ...')
+			return {}
+
+		# Return none if SE Linux is in enforcing mode
+		cpuid = CPUID()
+		if cpuid.is_selinux_enforcing:
+			trace_fail('SELinux is enforcing. Skipping ...')
+			return {}
+
+		# Get the cpu info from the CPUID register
+		max_extension_support = cpuid.get_max_extension_support()
+		cache_info = cpuid.get_cache(max_extension_support)
+		info = cpuid.get_info()
+
+		processor_brand = cpuid.get_processor_brand(max_extension_support)
+
+		# Get the Hz and scale
+		hz_actual = cpuid.get_raw_hz()
+		hz_actual = _to_decimal_string(hz_actual)
+
+		# Get the Hz and scale
+		hz_advertised, scale = _parse_cpu_brand_string(processor_brand)
+		info = {
+		'vendor_id_raw' : cpuid.get_vendor_id(),
+		'hardware_raw' : '',
+		'brand_raw' : processor_brand,
+
+		'hz_advertised_friendly' : _hz_short_to_friendly(hz_advertised, scale),
+		'hz_actual_friendly' : _hz_short_to_friendly(hz_actual, 0),
+		'hz_advertised' : _hz_short_to_full(hz_advertised, scale),
+		'hz_actual' : _hz_short_to_full(hz_actual, 0),
+
+		'l2_cache_size' : _to_friendly_bytes(cache_info['size_kb']),
+		'l2_cache_line_size' : cache_info['line_size_b'],
+		'l2_cache_associativity' : hex(cache_info['associativity']),
+
+		'stepping' : info['stepping'],
+		'model' : info['model'],
+		'family' : info['family'],
+		'processor_type' : info['processor_type'],
+		'extended_model' : info['extended_model'],
+		'extended_family' : info['extended_family'],
+		'flags' : cpuid.get_flags(max_extension_support)
+		}
+
+		output['info'] = {k: v for k, v in info.items() if v}
+		trace_success()
+	except Exception as err:
+		from traceback import format_exc
+		err_string = format_exc()
+		output['err'] = ''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n'
+
+	output['trace_file'] = output['trace_file'].getvalue()
+	output['stdout'] = output['stdout'].getvalue()
+	output['stderr'] = output['stderr'].getvalue()
+
+	return output
 
 def _get_cpu_info_from_cpuid_subprocess_wrapper(queue):
 	# Pipe all output to nothing
@@ -1450,9 +1479,9 @@ def _get_cpu_info_from_cpuid_subprocess_wrapper(queue):
 		sys.stdout = open(os.devnull, 'w')
 		sys.stderr = open(os.devnull, 'w')
 
-	info = _get_cpu_info_from_cpuid_actual()
+	output = _get_cpu_info_from_cpuid_actual()
 
-	queue.put(_obj_to_b64(info))
+	queue.put(_obj_to_b64(output))
 
 def _get_cpu_info_from_cpuid():
 	'''
@@ -1496,12 +1525,30 @@ def _get_cpu_info_from_cpuid():
 
 			# Return the result, only if there is something to read
 			if not queue.empty():
-				output = queue.get()
-				trace_success()
-				return _b64_to_obj(output)
+				output = _b64_to_obj(queue.get())
+
+				if output['stdout']:
+					sys.stdout.write('{0}\n'.format(output['stdout']))
+					sys.stdout.flush()
+
+				if output['stderr']:
+					sys.stderr.write('{0}\n'.format(output['stderr']))
+					sys.stderr.flush()
+
+				trace_file.write(output['trace_file'])
+
+				if output['err']:
+					trace_file.write('\tFailed ...\n')
+					trace_file.write(output['err'])
+					trace_file.flush()
+				else:
+					trace_success()
+				return output['info']
 		else:
+			# FIXME: This should write the values like in the above call to actual
+			output = _get_cpu_info_from_cpuid_actual()
 			trace_success()
-			return _get_cpu_info_from_cpuid_actual()
+			return output['info']
 	except Exception as err:
 		trace_fail(err)
 		pass
