@@ -44,92 +44,112 @@ except ImportError as err:
 IS_PY2 = sys.version_info[0] == 2
 CAN_CALL_CPUID_IN_SUBPROCESS = True
 
-trace_file = None
+g_trace = None
 
 
-def trace_header(msg):
-	if not trace_file: return
+class Trace(object):
+	def __init__(self, is_active, is_stored_in_string):
+		self._is_active = is_active
+		if not self._is_active:
+			return
 
-	from inspect import stack
-	frame = stack()[1]
-	file = frame[1]
-	line = frame[2]
-	trace_file.write("{0} ({1} {2})\n".format(msg, file, line))
-	trace_file.flush()
+		from datetime import datetime
 
-def trace_success():
-	if not trace_file: return
+		if IS_PY2:
+			from cStringIO import StringIO
+		else:
+			from io import StringIO
 
-	trace_file.write('Success ...\n\n')
-	trace_file.flush()
+		if is_stored_in_string:
+			self._output = StringIO()
+		else:
+			date = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+			self._output = open('cpuinfo_trace_{0}.log'.format(date), 'w')
 
-def trace_fail(msg):
-	if not trace_file: return
+	def header(self, msg):
+		if not self._is_active: return
 
-	if isinstance(msg, str):
-		msg = ''.join(['\t' + line for line in msg.split('\n')]) + '\n'
+		from inspect import stack
+		frame = stack()[1]
+		file = frame[1]
+		line = frame[2]
+		self._output.write("{0} ({1} {2})\n".format(msg, file, line))
+		self._output.flush()
 
-		trace_file.write(msg)
-		trace_file.write('Failed ...\n\n')
-		trace_file.flush()
-	elif isinstance(msg, Exception):
-		from traceback import format_exc
-		err_string = format_exc()
-		trace_file.write('\tFailed ...\n')
-		trace_file.write(''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n')
-		trace_file.flush()
+	def success(self):
+		if not self._is_active: return
 
-def trace_command_header(msg):
-	if not trace_file: return
+		self._output.write('Success ...\n\n')
+		self._output.flush()
 
-	from inspect import stack
-	frame = stack()[1]
-	file = frame[1]
-	line = frame[2]
-	trace_file.write("\t{0} ({1} {2})\n".format(msg, file, line))
-	trace_file.flush()
+	def fail(self, msg):
+		if not self._is_active: return
 
-def trace_command_output(msg, output):
-	if not trace_file: return
+		if isinstance(msg, str):
+			msg = ''.join(['\t' + line for line in msg.split('\n')]) + '\n'
 
-	trace_file.write("\t\t{0}\n".format(msg))
-	trace_file.write(''.join(['\t\t\t{0}\n'.format(n) for n in output.split('\n')]) + '\n')
-	trace_file.flush()
+			self._output.write(msg)
+			self._output.write('Failed ...\n\n')
+			self._output.flush()
+		elif isinstance(msg, Exception):
+			from traceback import format_exc
+			err_string = format_exc()
+			self._output.write('\tFailed ...\n')
+			self._output.write(''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n')
+			self._output.flush()
 
-def trace_keys(keys, info, new_info):
-	if not trace_file: return
+	def command_header(self, msg):
+		if not self._is_active: return
 
-	from inspect import stack
-	frame = stack()[1]
-	file = frame[1]
-	line = frame[2]
+		from inspect import stack
+		frame = stack()[1]
+		file = frame[1]
+		line = frame[2]
+		self._output.write("\t{0} ({1} {2})\n".format(msg, file, line))
+		self._output.flush()
 
-	# List updated keys
-	trace_file.write("\tChanged keys ({0} {1})\n".format(file, line))
-	changed_keys = [key for key in keys if key in info and key in new_info and info[key] != new_info[key]]
-	if changed_keys:
-		for key in changed_keys:
-			trace_file.write('\t\t{0}: {1} to {2}\n'.format(key, info[key], new_info[key]))
-	else:
-		trace_file.write('\t\tNone\n')
+	def command_output(self, msg, output):
+		if not self._is_active: return
 
-	# List new keys
-	trace_file.write("\tNew keys ({0} {1})\n".format(file, line))
-	new_keys = [key for key in keys if key in new_info and key not in info]
-	if new_keys:
-		for key in new_keys:
-			trace_file.write('\t\t{0}: {1}\n'.format(key, new_info[key]))
-	else:
-		trace_file.write('\t\tNone\n')
+		self._output.write("\t\t{0}\n".format(msg))
+		self._output.write(''.join(['\t\t\t{0}\n'.format(n) for n in output.split('\n')]) + '\n')
+		self._output.flush()
 
-	trace_file.write('\n')
-	trace_file.flush()
+	def keys(self, keys, info, new_info):
+		if not self._is_active: return
 
-def trace_write(msg):
-	if not trace_file: return
+		from inspect import stack
+		frame = stack()[1]
+		file = frame[1]
+		line = frame[2]
 
-	trace_file.write(msg + '\n')
-	trace_file.flush()
+		# List updated keys
+		self._output.write("\tChanged keys ({0} {1})\n".format(file, line))
+		changed_keys = [key for key in keys if key in info and key in new_info and info[key] != new_info[key]]
+		if changed_keys:
+			for key in changed_keys:
+				self._output.write('\t\t{0}: {1} to {2}\n'.format(key, info[key], new_info[key]))
+		else:
+			self._output.write('\t\tNone\n')
+
+		# List new keys
+		self._output.write("\tNew keys ({0} {1})\n".format(file, line))
+		new_keys = [key for key in keys if key in new_info and key not in info]
+		if new_keys:
+			for key in new_keys:
+				self._output.write('\t\t{0}: {1}\n'.format(key, new_info[key]))
+		else:
+			self._output.write('\t\tNone\n')
+
+		self._output.write('\n')
+		self._output.flush()
+
+	def write(self, msg):
+		if not self._is_active: return
+
+		self._output.write(msg + '\n')
+		self._output.flush()
+
 
 class DataSource(object):
 	bits = platform.architecture()[0]
@@ -286,7 +306,7 @@ def _run_and_get_stdout(command, pipe_command=None):
 
 	p1, p2, stdout_output, stderr_output = None, None, None, None
 
-	trace_command_header('Running command "' + ' '.join(command) + '" ...')
+	g_trace.command_header('Running command "' + ' '.join(command) + '" ...')
 
 	# Run the command normally
 	if not pipe_command:
@@ -304,18 +324,18 @@ def _run_and_get_stdout(command, pipe_command=None):
 		stderr_output = stderr_output.decode(encoding='UTF-8')
 
 	# Send the result to the logger
-	trace_command_output('return code:', str(p1.returncode))
-	trace_command_output('stdout:', stdout_output)
+	g_trace.command_output('return code:', str(p1.returncode))
+	g_trace.command_output('stdout:', stdout_output)
 
 	# Return the return code and stdout
 	return p1.returncode, stdout_output
 
 def _read_windows_registry_key(key_name, field_name):
-	trace_command_header('Reading Registry key "{0}" field "{1}" ...'.format(key_name, field_name))
+	g_trace.command_header('Reading Registry key "{0}" field "{1}" ...'.format(key_name, field_name))
 	key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_name)
 	value = winreg.QueryValueEx(key, field_name)[0]
 	winreg.CloseKey(key)
-	trace_command_output('value:', str(value))
+	g_trace.command_output('value:', str(value))
 	return value
 
 # Make sure we are running on a supported system
@@ -367,7 +387,7 @@ def _copy_new_fields(info, new_info):
 		'l3_cache_size', 'l1_data_cache_size', 'l1_instruction_cache_size'
 	]
 
-	trace_keys(keys, info, new_info)
+	g_trace.keys(keys, info, new_info)
 
 	# Update the keys with new values
 	for key in keys:
@@ -698,7 +718,7 @@ def _parse_dmesg_output(output):
 
 		return {k: v for k, v in info.items() if v}
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise
 		pass
 
@@ -754,16 +774,16 @@ def _is_bit_set(reg, bit):
 	return is_set
 
 
-def _is_selinux_enforcing():
+def _is_selinux_enforcing(trace):
 	# Just return if the SE Linux Status Tool is not installed
 	if not DataSource.has_sestatus():
-		trace_fail('Failed to find sestatus.')
+		trace.fail('Failed to find sestatus.')
 		return False
 
 	# Run the sestatus, and just return if it failed to run
 	returncode, output = DataSource.sestatus_b()
 	if returncode != 0:
-		trace_fail('Failed to run sestatus. Skipping ...')
+		trace.fail('Failed to run sestatus. Skipping ...')
 		return False
 
 	# Figure out if explicitly in enforcing mode
@@ -785,18 +805,18 @@ def _is_selinux_enforcing():
 		elif line.startswith("allow_execmem") and line.endswith("on"):
 			can_selinux_exec_memory = True
 
-	trace_command_output('can_selinux_exec_heap:', can_selinux_exec_heap)
-	trace_command_output('can_selinux_exec_memory:', can_selinux_exec_memory)
+	trace.command_output('can_selinux_exec_heap:', can_selinux_exec_heap)
+	trace.command_output('can_selinux_exec_memory:', can_selinux_exec_memory)
 
 	return (not can_selinux_exec_heap or not can_selinux_exec_memory)
 
 
 class CPUID(object):
-	def __init__(self):
+	def __init__(self, trace):
 		self.prochandle = None
 
 		# Figure out if SE Linux is on and in enforcing mode
-		self.is_selinux_enforcing = _is_selinux_enforcing()
+		self.is_selinux_enforcing = _is_selinux_enforcing(trace)
 
 	def _asm_func(self, restype=None, argtypes=(), byte_code=[]):
 		byte_code = bytes.join(b'', byte_code)
@@ -1396,7 +1416,7 @@ def _get_cpu_info_from_cpuid_actual():
 		from io import StringIO
 
 	output = {
-	'trace_file' : StringIO(),
+	'trace_file' : '',
 	'stdout' : StringIO(),
 	'stderr' : StringIO(),
 	'info' : None,
@@ -1404,8 +1424,7 @@ def _get_cpu_info_from_cpuid_actual():
 	}
 
 	# Pipe stdout and stderr to strings
-	global trace_file
-	trace_file = output['trace_file']
+	trace = Trace(True, True)
 	sys.stdout = output['stdout']
 	sys.stderr = output['stderr']
 
@@ -1415,13 +1434,13 @@ def _get_cpu_info_from_cpuid_actual():
 
 		# Return none if this is not an X86 CPU
 		if not arch in ['X86_32', 'X86_64']:
-			trace_fail('Not running on X86_32 or X86_64. Skipping ...')
+			trace.fail('Not running on X86_32 or X86_64. Skipping ...')
 			return {}
 
 		# Return none if SE Linux is in enforcing mode
-		cpuid = CPUID()
+		cpuid = CPUID(trace)
 		if cpuid.is_selinux_enforcing:
-			trace_fail('SELinux is enforcing. Skipping ...')
+			trace.fail('SELinux is enforcing. Skipping ...')
 			return {}
 
 		# Get the cpu info from the CPUID register
@@ -1461,13 +1480,13 @@ def _get_cpu_info_from_cpuid_actual():
 		}
 
 		output['info'] = {k: v for k, v in info.items() if v}
-		trace_success()
+		trace.success()
 	except Exception as err:
 		from traceback import format_exc
 		err_string = format_exc()
 		output['err'] = ''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n'
 
-	output['trace_file'] = output['trace_file'].getvalue()
+	output['trace_file'] = trace.getvalue()
 	output['stdout'] = output['stdout'].getvalue()
 	output['stderr'] = output['stderr'].getvalue()
 
@@ -1491,13 +1510,13 @@ def _get_cpu_info_from_cpuid():
 	Returns {} if SELinux is in enforcing mode.
 	'''
 
-	trace_header('Tying to get info from CPUID ...')
+	g_trace.header('Tying to get info from CPUID ...')
 
 	from multiprocessing import Process, Queue
 
 	# Return {} if can't cpuid
 	if not DataSource.can_cpuid:
-		trace_fail('Can\'t CPUID. Skipping ...')
+		g_trace.fail('Can\'t CPUID. Skipping ...')
 		return {}
 
 	# Get the CPU arch and bits
@@ -1505,7 +1524,7 @@ def _get_cpu_info_from_cpuid():
 
 	# Return {} if this is not an X86 CPU
 	if not arch in ['X86_32', 'X86_64']:
-		trace_fail('Not running on X86_32 or X86_64. Skipping ...')
+		g_trace.fail('Not running on X86_32 or X86_64. Skipping ...')
 		return {}
 
 	try:
@@ -1521,12 +1540,13 @@ def _get_cpu_info_from_cpuid():
 
 			# Return {} if it failed
 			if p.exitcode != 0:
-				trace_fail('Failed to run CPUID in process. Skipping ...')
+				g_trace.fail('Failed to run CPUID in process. Skipping ...')
 				return {}
 
 			# Return the result, only if there is something to read
 			if not queue.empty():
 				output = _b64_to_obj(queue.get())
+				print(output)
 
 				if output['stdout']:
 					sys.stdout.write('{0}\n'.format(output['stdout']))
@@ -1543,7 +1563,7 @@ def _get_cpu_info_from_cpuid():
 					trace_file.write(output['err'])
 					trace_file.flush()
 				else:
-					trace_success()
+					g_trace.success()
 				return output['info']
 		else:
 			# FIXME: This should write the values like in the above call to actual
@@ -1555,10 +1575,10 @@ def _get_cpu_info_from_cpuid():
 			sys.stdout = orig_stdout
 			sys.stderr = orig_stderr
 
-			trace_success()
+			g_trace.success()
 			return output['info']
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		pass
 
 	# Return {} if everything failed
@@ -1570,17 +1590,17 @@ def _get_cpu_info_from_proc_cpuinfo():
 	Returns {} if /proc/cpuinfo is not found.
 	'''
 
-	trace_header('Tying to get info from /proc/cpuinfo ...')
+	g_trace.header('Tying to get info from /proc/cpuinfo ...')
 
 	try:
 		# Just return {} if there is no cpuinfo
 		if not DataSource.has_proc_cpuinfo():
-			trace_fail('Failed to find /proc/cpuinfo. Skipping ...')
+			g_trace.fail('Failed to find /proc/cpuinfo. Skipping ...')
 			return {}
 
 		returncode, output = DataSource.cat_proc_cpuinfo()
 		if returncode != 0:
-			trace_fail('Failed to run cat /proc/cpuinfo. Skipping ...')
+			g_trace.fail('Failed to run cat /proc/cpuinfo. Skipping ...')
 			return {}
 
 		# Various fields
@@ -1652,10 +1672,10 @@ def _get_cpu_info_from_proc_cpuinfo():
 			info['hz_actual'] = _hz_short_to_full(hz_actual, 6)
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -1665,18 +1685,18 @@ def _get_cpu_info_from_cpufreq_info():
 	Returns {} if cpufreq-info is not found.
 	'''
 
-	trace_header('Tying to get info from cpufreq-info ...')
+	g_trace.header('Tying to get info from cpufreq-info ...')
 
 	try:
 		hz_brand, scale = '0.0', 0
 
 		if not DataSource.has_cpufreq_info():
-			trace_fail('Failed to find cpufreq-info. Skipping ...')
+			g_trace.fail('Failed to find cpufreq-info. Skipping ...')
 			return {}
 
 		returncode, output = DataSource.cpufreq_info()
 		if returncode != 0:
-			trace_fail('Failed to run cpufreq-info. Skipping ...')
+			g_trace.fail('Failed to run cpufreq-info. Skipping ...')
 			return {}
 
 		hz_brand = output.split('current CPU frequency is')[1].split('\n')[0]
@@ -1699,10 +1719,10 @@ def _get_cpu_info_from_cpufreq_info():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -1712,16 +1732,16 @@ def _get_cpu_info_from_lscpu():
 	Returns {} if lscpu is not found.
 	'''
 
-	trace_header('Tying to get info from lscpu ...')
+	g_trace.header('Tying to get info from lscpu ...')
 
 	try:
 		if not DataSource.has_lscpu():
-			trace_fail('Failed to find lscpu. Skipping ...')
+			g_trace.fail('Failed to find lscpu. Skipping ...')
 			return {}
 
 		returncode, output = DataSource.lscpu()
 		if returncode != 0:
-			trace_fail('Failed to run lscpu. Skipping ...')
+			g_trace.fail('Failed to run lscpu. Skipping ...')
 			return {}
 
 		info = {}
@@ -1788,10 +1808,10 @@ def _get_cpu_info_from_lscpu():
 			info['flags'] = flags
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -1801,27 +1821,27 @@ def _get_cpu_info_from_dmesg():
 	Returns {} if dmesg is not found or does not have the desired info.
 	'''
 
-	trace_header('Tying to get info from the dmesg ...')
+	g_trace.header('Tying to get info from the dmesg ...')
 
 	# Just return {} if this arch has an unreliable dmesg log
 	arch, bits = _parse_arch(DataSource.arch_string_raw)
 	if arch in ['S390X']:
-		trace_fail('Running on S390X. Skipping ...')
+		g_trace.fail('Running on S390X. Skipping ...')
 		return {}
 
 	# Just return {} if there is no dmesg
 	if not DataSource.has_dmesg():
-		trace_fail('Failed to find dmesg. Skipping ...')
+		g_trace.fail('Failed to find dmesg. Skipping ...')
 		return {}
 
 	# If dmesg fails return {}
 	returncode, output = DataSource.dmesg_a()
 	if output == None or returncode != 0:
-		trace_fail('Failed to run \"dmesg -a\". Skipping ...')
+		g_trace.fail('Failed to run \"dmesg -a\". Skipping ...')
 		return {}
 
 	info = _parse_dmesg_output(output)
-	trace_success()
+	g_trace.success()
 	return info
 
 
@@ -1833,18 +1853,18 @@ def _get_cpu_info_from_ibm_pa_features():
 	Returns {} if lsprop is not found or ibm,pa-features does not have the desired info.
 	'''
 
-	trace_header('Tying to get info from lsprop ...')
+	g_trace.header('Tying to get info from lsprop ...')
 
 	try:
 		# Just return {} if there is no lsprop
 		if not DataSource.has_ibm_pa_features():
-			trace_fail('Failed to find lsprop. Skipping ...')
+			g_trace.fail('Failed to find lsprop. Skipping ...')
 			return {}
 
 		# If ibm,pa-features fails return {}
 		returncode, output = DataSource.ibm_pa_features()
 		if output == None or returncode != 0:
-			trace_fail('Failed to glob /proc/device-tree/cpus/*/ibm,pa-features. Skipping ...')
+			g_trace.fail('Failed to glob /proc/device-tree/cpus/*/ibm,pa-features. Skipping ...')
 			return {}
 
 		# Filter out invalid characters from output
@@ -1947,10 +1967,10 @@ def _get_cpu_info_from_ibm_pa_features():
 			'flags' : flags
 		}
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		return {}
 
 
@@ -1960,21 +1980,21 @@ def _get_cpu_info_from_cat_var_run_dmesg_boot():
 	Returns {} if dmesg is not found or does not have the desired info.
 	'''
 
-	trace_header('Tying to get info from the /var/run/dmesg.boot log ...')
+	g_trace.header('Tying to get info from the /var/run/dmesg.boot log ...')
 
 	# Just return {} if there is no /var/run/dmesg.boot
 	if not DataSource.has_var_run_dmesg_boot():
-		trace_fail('Failed to find /var/run/dmesg.boot file. Skipping ...')
+		g_trace.fail('Failed to find /var/run/dmesg.boot file. Skipping ...')
 		return {}
 
 	# If dmesg.boot fails return {}
 	returncode, output = DataSource.cat_var_run_dmesg_boot()
 	if output == None or returncode != 0:
-		trace_fail('Failed to run \"cat /var/run/dmesg.boot\". Skipping ...')
+		g_trace.fail('Failed to run \"cat /var/run/dmesg.boot\". Skipping ...')
 		return {}
 
 	info = _parse_dmesg_output(output)
-	trace_success()
+	g_trace.success()
 	return info
 
 
@@ -1984,18 +2004,18 @@ def _get_cpu_info_from_sysctl():
 	Returns {} if sysctl is not found.
 	'''
 
-	trace_header('Tying to get info from sysctl ...')
+	g_trace.header('Tying to get info from sysctl ...')
 
 	try:
 		# Just return {} if there is no sysctl
 		if not DataSource.has_sysctl():
-			trace_fail('Failed to find sysctl. Skipping ...')
+			g_trace.fail('Failed to find sysctl. Skipping ...')
 			return {}
 
 		# If sysctl fails return {}
 		returncode, output = DataSource.sysctl_machdep_cpu_hw_cpufrequency()
 		if output == None or returncode != 0:
-			trace_fail('Failed to run \"sysctl machdep.cpu hw.cpufrequency\". Skipping ...')
+			g_trace.fail('Failed to run \"sysctl machdep.cpu hw.cpufrequency\". Skipping ...')
 			return {}
 
 		# Various fields
@@ -2035,10 +2055,10 @@ def _get_cpu_info_from_sysctl():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		return {}
 
 
@@ -2058,18 +2078,18 @@ def _get_cpu_info_from_sysinfo_v1():
 	Returns {} if sysinfo is not found.
 	'''
 
-	trace_header('Tying to get info from sysinfo version 1 ...')
+	g_trace.header('Tying to get info from sysinfo version 1 ...')
 
 	try:
 		# Just return {} if there is no sysinfo
 		if not DataSource.has_sysinfo():
-			trace_fail('Failed to find sysinfo. Skipping ...')
+			g_trace.fail('Failed to find sysinfo. Skipping ...')
 			return {}
 
 		# If sysinfo fails return {}
 		returncode, output = DataSource.sysinfo_cpu()
 		if output == None or returncode != 0:
-			trace_fail('Failed to run \"sysinfo -cpu\". Skipping ...')
+			g_trace.fail('Failed to run \"sysinfo -cpu\". Skipping ...')
 			return {}
 
 		# Various fields
@@ -2110,10 +2130,10 @@ def _get_cpu_info_from_sysinfo_v1():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -2123,18 +2143,18 @@ def _get_cpu_info_from_sysinfo_v2():
 	Returns {} if sysinfo is not found.
 	'''
 
-	trace_header('Tying to get info from sysinfo version 2 ...')
+	g_trace.header('Tying to get info from sysinfo version 2 ...')
 
 	try:
 		# Just return {} if there is no sysinfo
 		if not DataSource.has_sysinfo():
-			trace_fail('Failed to find sysinfo. Skipping ...')
+			g_trace.fail('Failed to find sysinfo. Skipping ...')
 			return {}
 
 		# If sysinfo fails return {}
 		returncode, output = DataSource.sysinfo_cpu()
 		if output == None or returncode != 0:
-			trace_fail('Failed to run \"sysinfo -cpu\". Skipping ...')
+			g_trace.fail('Failed to run \"sysinfo -cpu\". Skipping ...')
 			return {}
 
 		# Various fields
@@ -2192,10 +2212,10 @@ def _get_cpu_info_from_sysinfo_v2():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -2204,17 +2224,17 @@ def _get_cpu_info_from_wmic():
 	Returns the CPU info gathered from WMI.
 	Returns {} if not on Windows, or wmic is not installed.
 	'''
-	trace_header('Tying to get info from wmic ...')
+	g_trace.header('Tying to get info from wmic ...')
 
 	try:
 		# Just return {} if not Windows or there is no wmic
 		if not DataSource.is_windows or not DataSource.has_wmic():
-			trace_fail('Failed to find WMIC, or not on Windows. Skipping ...')
+			g_trace.fail('Failed to find WMIC, or not on Windows. Skipping ...')
 			return {}
 
 		returncode, output = DataSource.wmic_cpu()
 		if output == None or returncode != 0:
-			trace_fail('Failed to run wmic. Skipping ...')
+			g_trace.fail('Failed to run wmic. Skipping ...')
 			return {}
 
 		# Break the list into key values pairs
@@ -2276,10 +2296,10 @@ def _get_cpu_info_from_wmic():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		#raise # NOTE: To have this throw on error, uncomment this line
 		return {}
 
@@ -2290,12 +2310,12 @@ def _get_cpu_info_from_registry():
 	Returns {} if not on Windows.
 	'''
 
-	trace_header('Tying to get info from Windows registry ...')
+	g_trace.header('Tying to get info from Windows registry ...')
 
 	try:
 		# Just return {} if not on Windows
 		if not DataSource.is_windows:
-			trace_fail('Not running on Windows. Skipping ...')
+			g_trace.fail('Not running on Windows. Skipping ...')
 			return {}
 
 		# Get the CPU name
@@ -2383,10 +2403,10 @@ def _get_cpu_info_from_registry():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		return {}
 
 def _get_cpu_info_from_kstat():
@@ -2395,24 +2415,24 @@ def _get_cpu_info_from_kstat():
 	Returns {} if isainfo or kstat are not found.
 	'''
 
-	trace_header('Tying to get info from kstat ...')
+	g_trace.header('Tying to get info from kstat ...')
 
 	try:
 		# Just return {} if there is no isainfo or kstat
 		if not DataSource.has_isainfo() or not DataSource.has_kstat():
-			trace_fail('Failed to find isinfo or kstat. Skipping ...')
+			g_trace.fail('Failed to find isinfo or kstat. Skipping ...')
 			return {}
 
 		# If isainfo fails return {}
 		returncode, flag_output = DataSource.isainfo_vb()
 		if flag_output == None or returncode != 0:
-			trace_fail('Failed to run \"isainfo -vb\". Skipping ...')
+			g_trace.fail('Failed to run \"isainfo -vb\". Skipping ...')
 			return {}
 
 		# If kstat fails return {}
 		returncode, kstat = DataSource.kstat_m_cpu_info()
 		if kstat == None or returncode != 0:
-			trace_fail('Failed to run \"kstat -m cpu_info\". Skipping ...')
+			g_trace.fail('Failed to run \"kstat -m cpu_info\". Skipping ...')
 			return {}
 
 		# Various fields
@@ -2451,15 +2471,15 @@ def _get_cpu_info_from_kstat():
 		}
 
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		return {}
 
 def _get_cpu_info_from_platform_uname():
 
-	trace_header('Tying to get info from platform.uname ...')
+	g_trace.header('Tying to get info from platform.uname ...')
 
 	try:
 		uname = DataSource.uname_string_raw.split(',')[0]
@@ -2485,10 +2505,10 @@ def _get_cpu_info_from_platform_uname():
 			'stepping' : stepping
 		}
 		info = {k: v for k, v in info.items() if v}
-		trace_success()
+		g_trace.success()
 		return info
 	except Exception as err:
-		trace_fail(err)
+		g_trace.fail(err)
 		return {}
 
 def _get_cpu_info_internal():
@@ -2497,7 +2517,7 @@ def _get_cpu_info_internal():
 	Returns {} if nothing is found.
 	'''
 
-	trace_write('!' * 80)
+	g_trace.write('!' * 80)
 
 	# Get the CPU arch and bits
 	arch, bits = _parse_arch(DataSource.arch_string_raw)
@@ -2516,12 +2536,12 @@ def _get_cpu_info_internal():
 		'arch_string_raw' : DataSource.arch_string_raw,
 	}
 
-	trace_write("python_version: {0}".format(info['python_version']))
-	trace_write("cpuinfo_version: {0}".format(info['cpuinfo_version']))
-	trace_write("arch: {0}".format(info['arch']))
-	trace_write("bits: {0}".format(info['bits']))
-	trace_write("count: {0}".format(info['count']))
-	trace_write("arch_string_raw: {0}".format(info['arch_string_raw']))
+	g_trace.write("python_version: {0}".format(info['python_version']))
+	g_trace.write("cpuinfo_version: {0}".format(info['cpuinfo_version']))
+	g_trace.write("arch: {0}".format(info['arch']))
+	g_trace.write("bits: {0}".format(info['bits']))
+	g_trace.write("count: {0}".format(info['count']))
+	g_trace.write("arch_string_raw: {0}".format(info['arch_string_raw']))
 
 	# Try the Windows wmic
 	_copy_new_fields(info, _get_cpu_info_from_wmic())
@@ -2563,7 +2583,7 @@ def _get_cpu_info_internal():
 	# Try platform.uname
 	_copy_new_fields(info, _get_cpu_info_from_platform_uname())
 
-	trace_write('!' * 80)
+	g_trace.write('!' * 80)
 
 	return info
 
@@ -2626,12 +2646,8 @@ def main():
 	parser.add_argument('--trace', action='store_true', help='Traces code paths used to find CPU info to file')
 	args = parser.parse_args()
 
-	if args.trace:
-		global trace_file
-		from datetime import datetime
-
-		date = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-		trace_file = open('cpuinfo_trace_{0}.log'.format(date), 'w')
+	global g_trace
+	g_trace = Trace(args.trace, False)
 
 	try:
 		_check_arch()
