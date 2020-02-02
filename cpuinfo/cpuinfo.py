@@ -1474,12 +1474,13 @@ def _get_cpu_info_from_cpuid_actual():
 	return output
 
 def _get_cpu_info_from_cpuid_subprocess_wrapper(queue):
-	# Pipe all output to nothing
-	if not trace_file:
-		sys.stdout = open(os.devnull, 'w')
-		sys.stderr = open(os.devnull, 'w')
+	orig_stdout = sys.stdout
+	orig_stderr = sys.stderr
 
 	output = _get_cpu_info_from_cpuid_actual()
+
+	sys.stdout = orig_stdout
+	sys.stderr = orig_stderr
 
 	queue.put(_obj_to_b64(output))
 
@@ -1546,7 +1547,14 @@ def _get_cpu_info_from_cpuid():
 				return output['info']
 		else:
 			# FIXME: This should write the values like in the above call to actual
+			orig_stdout = sys.stdout
+			orig_stderr = sys.stderr
+
 			output = _get_cpu_info_from_cpuid_actual()
+
+			sys.stdout = orig_stdout
+			sys.stderr = orig_stderr
+
 			trace_success()
 			return output['info']
 	except Exception as err:
