@@ -63,7 +63,7 @@ class Trace(object):
 		if is_stored_in_string:
 			self._output = StringIO()
 		else:
-			date = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+			date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
 			self._output = open('cpuinfo_trace_{0}.log'.format(date), 'w')
 
 	def header(self, msg):
