@@ -66,6 +66,10 @@ class Trace(object):
 			date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
 			self._output = open('cpuinfo_trace_{0}.log'.format(date), 'w')
 
+		self._stdout = StringIO()
+		self._stderr = StringIO()
+		self._err = None
+
 	def header(self, msg):
 		if not self._is_active: return
 
@@ -150,6 +154,15 @@ class Trace(object):
 		self._output.write(msg + '\n')
 		self._output.flush()
 
+	def to_dict(self, info, is_fail):
+		return {
+		'output' : self._output.getvalue(),
+		'stdout' : self._stdout.getvalue(),
+		'stderr' : self._stderr.getvalue(),
+		'info' : info,
+		'err' : self._err,
+		'is_fail' : is_fail
+		}
 
 class DataSource(object):
 	bits = platform.architecture()[0]
@@ -1415,18 +1428,12 @@ def _get_cpu_info_from_cpuid_actual():
 	else:
 		from io import StringIO
 
-	output = {
-	'trace_file' : '',
-	'stdout' : StringIO(),
-	'stderr' : StringIO(),
-	'info' : None,
-	'err' : None
-	}
+	trace = Trace(True, True)
+	info = {}
 
 	# Pipe stdout and stderr to strings
-	trace = Trace(True, True)
-	sys.stdout = output['stdout']
-	sys.stderr = output['stderr']
+	sys.stdout = trace._stdout
+	sys.stderr = trace._stderr
 
 	try:
 		# Get the CPU arch and bits
@@ -1435,13 +1442,13 @@ def _get_cpu_info_from_cpuid_actual():
 		# Return none if this is not an X86 CPU
 		if not arch in ['X86_32', 'X86_64']:
 			trace.fail('Not running on X86_32 or X86_64. Skipping ...')
-			return {}
+			return trace.to_dict(info, True)
 
 		# Return none if SE Linux is in enforcing mode
 		cpuid = CPUID(trace)
 		if cpuid.is_selinux_enforcing:
 			trace.fail('SELinux is enforcing. Skipping ...')
-			return {}
+			return trace.to_dict(info, True)
 
 		# Get the cpu info from the CPUID register
 		max_extension_support = cpuid.get_max_extension_support()
@@ -1479,18 +1486,15 @@ def _get_cpu_info_from_cpuid_actual():
 		'flags' : cpuid.get_flags(max_extension_support)
 		}
 
-		output['info'] = {k: v for k, v in info.items() if v}
+		info = {k: v for k, v in info.items() if v}
 		trace.success()
 	except Exception as err:
 		from traceback import format_exc
 		err_string = format_exc()
-		output['err'] = ''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n'
+		trace.err = ''.join(['\t\t{0}\n'.format(n) for n in err_string.split('\n')]) + '\n'
+		return trace.to_dict(info, True)
 
-	output['trace_file'] = trace.getvalue()
-	output['stdout'] = output['stdout'].getvalue()
-	output['stderr'] = output['stderr'].getvalue()
-
-	return output
+	return trace.to_dict(info, False)
 
 def _get_cpu_info_from_cpuid_subprocess_wrapper(queue):
 	orig_stdout = sys.stdout
@@ -1543,27 +1547,47 @@ def _get_cpu_info_from_cpuid():
 				g_trace.fail('Failed to run CPUID in process. Skipping ...')
 				return {}
 
+			# Return {} if no results
+			if queue.empty():
+				g_trace.fail('Failed to get anything from CPUID process. Skipping ...')
+				return {}
 			# Return the result, only if there is something to read
-			if not queue.empty():
+			else:
 				output = _b64_to_obj(queue.get())
-				print(output)
+				import pprint
+				pp = pprint.PrettyPrinter(indent=4)
+				pp.pprint(output)
 
-				if output['stdout']:
+				if 'output' in output and output['output']:
+					g_trace.write(output['output'])
+
+				if 'stdout' in output and output['stdout']:
 					sys.stdout.write('{0}\n'.format(output['stdout']))
 					sys.stdout.flush()
 
-				if output['stderr']:
+				if 'stderr' in output and output['stderr']:
 					sys.stderr.write('{0}\n'.format(output['stderr']))
 					sys.stderr.flush()
 
-				trace_file.write(output['trace_file'])
+				if 'is_fail' not in output:
+					g_trace.fail('Failed to get is_fail from CPUID process. Skipping ...')
+					return {}
 
-				if output['err']:
-					trace_file.write('\tFailed ...\n')
-					trace_file.write(output['err'])
-					trace_file.flush()
-				else:
-					g_trace.success()
+				# Fail if there was an exception
+				if 'err' in output and output['err']:
+					g_trace.fail('Failed to run CPUID in process. Skipping ...')
+					g_trace.write(output['err'])
+					g_trace.write('Failed ...')
+					return {}
+
+				if 'is_fail' in output and output['is_fail']:
+					g_trace.write('Failed ...')
+					return {}
+
+				if 'info' not in output or not output['info']:
+					g_trace.fail('Failed to get return info from CPUID process. Skipping ...')
+					return {}
+
 				return output['info']
 		else:
 			# FIXME: This should write the values like in the above call to actual
